@@ -9,9 +9,11 @@ public class Spawner : MonoBehaviour
 {
     [SerializeField] private GameObject prefab;
     [SerializeField] private GameObject planePrafab;
+    [SerializeField] private AudioClip generateClip = null;
+    [SerializeField] private AudioClip deleteClip = null;
     private int layer =0;
     private LayerMask layerMask;
-    public float timeInterval = 0.2f;
+    public float timeInterval = 0.04f;
     private float dt = 0;
     private void Awake()
     {
@@ -23,14 +25,20 @@ public class Spawner : MonoBehaviour
         dt += Time.deltaTime;
         if (Input.GetMouseButton(0) && dt >= timeInterval)
         {
-            // Vector3 worldPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
             Debug.DrawRay(ray.origin, ray.direction * 10, Color.red, 2f);  // 调试绘制射线
             RaycastHit hit;
             if (Physics.Raycast(ray, out hit,20,layerMask))
             {
                 // Debug.Log(hit.point);
-                ObjectPoolManager.SpawnObject(prefab, hit.point, prefab.transform.rotation);
+                if (generateClip || deleteClip)
+                {
+                    ObjectPoolManager.SpawnObject(prefab, hit.point, prefab.transform.rotation,ObjectPoolManager.PoolType.SoundFX,generateClip,deleteClip);
+                }
+                else
+                {
+                    ObjectPoolManager.SpawnObject(prefab, hit.point, prefab.transform.rotation);
+                }
             }else
             {
                 Debug.LogWarning("Raycast did not hit anything with layerMask: " + layerMask);
