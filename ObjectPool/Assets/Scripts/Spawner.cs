@@ -33,11 +33,11 @@ public class Spawner : MonoBehaviour
                 // Debug.Log(hit.point);
                 if (generateClip || deleteClip)
                 {
-                    ObjectPoolManager.SpawnObject(prefab, hit.point, prefab.transform.rotation,ObjectPoolManager.PoolType.SoundFX,generateClip,deleteClip);
+                    ObjectPoolManager.Instance.SpawnObject(prefab, hit.point, prefab.transform.rotation,ObjectPoolManager.PoolType.SoundFX,generateClip,deleteClip);
                 }
                 else
                 {
-                    ObjectPoolManager.SpawnObject(prefab, hit.point, prefab.transform.rotation);
+                    ObjectPoolManager.Instance.SpawnObject(prefab, hit.point, prefab.transform.rotation);
                 }
             }else
             {

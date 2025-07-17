@@ -7,7 +7,7 @@ using UnityEngine;
 
 public  class SoundClipManager:MonoBehaviour
 {
-    private static SoundClipManager instance;
+    private static SoundClipManager instance = null;
     private static readonly object _lock = new object();
     public static SoundClipManager Instance {
         get {
@@ -15,9 +15,12 @@ public  class SoundClipManager:MonoBehaviour
             {
                 lock (_lock)
                 {
+                    instance = FindObjectOfType<SoundClipManager>();
                     if (instance == null)
                     {
-                        instance = FindObjectOfType<SoundClipManager>();
+                        Debug.LogWarning("There is no SoundClipManager,has auto generated");
+                        GameObject go = new GameObject(nameof(SoundClipManager));
+                        go.AddComponent<SoundClipManager>();
                     }
                 }
             }
@@ -27,6 +30,13 @@ public  class SoundClipManager:MonoBehaviour
     private static Queue<GameObject> audioPool;
     private void Awake()
     {
+        if (instance != null && instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        instance = this;
         audioPool = new Queue<GameObject>();
     }
     public  void PlayPooledSound(AudioClip clip, Vector3 position, float volume = 1.0f)

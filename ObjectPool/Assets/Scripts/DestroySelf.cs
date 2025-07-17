@@ -13,6 +13,6 @@ public class DestroySelf : MonoBehaviour
     private IEnumerator Destroy()
     {
         yield return new WaitForSeconds(1.5f);
-        ObjectPoolManager.ReturnObjectToPool(gameObject,ObjectPoolManager.PoolType.GameObject,true);
+        ObjectPoolManager.Instance.ReturnObjectToPool(gameObject,ObjectPoolManager.PoolType.GameObject,true);
     }
 }

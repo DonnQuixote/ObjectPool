@@ -1,11 +1,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 using UnityEngine;
 using UnityEngine.Pool;
 
 public class ObjectPoolManager : MonoBehaviour
 {
+    private static volatile ObjectPoolManager _instance = null;
+    private static readonly object _lock = new object();
     //volatile 确保线程修改时对其他线程的访问是可见的;不保证原子性，适用于计时器等场景
     [SerializeField] private volatile bool _addToDontDestroyOnLoad = false;
     private GameObject _emptyHolder;
@@ -16,6 +19,26 @@ public class ObjectPoolManager : MonoBehaviour
 
     private static Dictionary<GameObject, ObjectPool<GameObject>> _objectPools;
     private static Dictionary<GameObject, GameObject> _cloneToPrefabMap;
+
+    public static ObjectPoolManager Instance {
+        get {
+            if (_instance==null)
+            {
+                lock(_lock)
+                {
+                    _instance = FindObjectOfType<ObjectPoolManager>();
+                    if (_instance)
+                    {
+                        Debug.LogWarning("There is no ObjectPoolManager,has auto generated");
+                        GameObject go = new GameObject(nameof(ObjectPoolManager));
+                        go.AddComponent<ObjectPoolManager>();
+                    }
+                }
+            }
+
+            return _instance;
+        }
+    }
     public struct ObjectClips
     {
         public AudioClip generateClip;
@@ -37,6 +60,13 @@ public class ObjectPoolManager : MonoBehaviour
 
     private void Awake()
     {
+        if (_instance != null && _instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        _instance = this;
+        
         _objectPools = new Dictionary<GameObject, ObjectPool<GameObject>>();
         _cloneToPrefabMap = new Dictionary<GameObject, GameObject>();
         _objectToClip = new Dictionary<GameObject, ObjectClips>();
@@ -96,14 +126,17 @@ public class ObjectPoolManager : MonoBehaviour
 
     static void OnDestroyObject(GameObject obj)
     {
-        if (_cloneToPrefabMap.ContainsKey(obj))
+        lock (_lock)
         {
-            Debug.Log("DestroyObject");
-            _cloneToPrefabMap.Remove(obj);
+            if (_cloneToPrefabMap.ContainsKey(obj))
+            {
+                Debug.Log("DestroyObject");
+                _cloneToPrefabMap.Remove(obj);
+            }
         }
     }
 
-    static GameObject SetParentObject(PoolType poolType)
+     static GameObject SetParentObject(PoolType poolType)
     {
         switch (poolType)
         {
@@ -118,96 +151,103 @@ public class ObjectPoolManager : MonoBehaviour
         }
     }
 
-    private static T SpawnObject<T>(GameObject objectToSpawn, Vector3 spawnPos, Quaternion spawnRot, PoolType poolType = PoolType.GameObject,
+    public  T SpawnObject<T>(GameObject objectToSpawn, Vector3 spawnPos, Quaternion spawnRot, PoolType poolType = PoolType.GameObject,
         AudioClip generateClip = null,AudioClip deleteClip = null) where T : UnityEngine.Object
     {
-        if (!_objectPools.ContainsKey(objectToSpawn))
+        lock (_lock)
         {
-            CreatePool(objectToSpawn, spawnPos, spawnRot, poolType);
-        }
-
-        GameObject obj = _objectPools[objectToSpawn].Get();
-
-        if (obj != null)
-        {
-            if (!_cloneToPrefabMap.ContainsKey(obj))
+            if (!_objectPools.ContainsKey(objectToSpawn))
             {
-                _cloneToPrefabMap.Add(obj,objectToSpawn);
+                CreatePool(objectToSpawn, spawnPos, spawnRot, poolType);
             }
-            
-            if (generateClip || deleteClip)
+
+            GameObject obj = _objectPools[objectToSpawn].Get();
+
+            if (obj != null)
             {
-                if (!_objectToClip.ContainsKey(obj))
+                if (!_cloneToPrefabMap.ContainsKey(obj))
                 {
-                    ObjectClips oc = new ObjectClips(generateClip, deleteClip);
-                    _objectToClip.Add(obj,oc);
+                    _cloneToPrefabMap.Add(obj,objectToSpawn);
                 }
-            }
-
-            Rigidbody rigidBody = obj.GetComponent<Rigidbody>();
-            if (rigidBody != null)
-            {
-                rigidBody.velocity = Vector3.zero;
-            }
             
-            obj.transform.position = spawnPos;
-            obj.transform.rotation = spawnRot;
-            obj.SetActive(true);
-            // AudioSource.PlayClipAtPoint(generateClip,spawnPos,0.6f);
-            SoundClipManager.Instance.PlayPooledSound(generateClip, spawnPos, 0.6f);
-            Debug.Log("SpawnSuccess");
+                if (generateClip || deleteClip)
+                {
+                    if (!_objectToClip.ContainsKey(obj))
+                    {
+                        ObjectClips oc = new ObjectClips(generateClip, deleteClip);
+                        _objectToClip.Add(obj,oc);
+                    }
+                }
 
-            if (typeof(T) == typeof(GameObject))
+                Rigidbody rigidBody = obj.GetComponent<Rigidbody>();
+                if (rigidBody != null)
+                {
+                    rigidBody.velocity = Vector3.zero;
+                }
+            
+                obj.transform.position = spawnPos;
+                obj.transform.rotation = spawnRot;
+                obj.SetActive(true);
+                // AudioSource.PlayClipAtPoint(generateClip,spawnPos,0.6f);
+                SoundClipManager.Instance.PlayPooledSound(generateClip, spawnPos, 0.6f);
+                Debug.Log("SpawnSuccess");
+
+                if (typeof(T) == typeof(GameObject))
+                {
+                    return obj as T;
+                }
+
+                T component = obj.GetComponent<T>();
+                if (component == null)
+                {
+                    Debug.LogError($"Object {objectToSpawn.name} doesn't have component of type {typeof(T)}");
+                    return null;
+                }
+
+                return component;
+            }
+            else
             {
-                return obj as T;
+                Debug.Log("Getting a null object from the pool! ");
             }
 
-            T component = obj.GetComponent<T>();
-            if (component == null)
-            {
-                Debug.LogError($"Object {objectToSpawn.name} doesn't have component of type {typeof(T)}");
-                return null;
-            }
-
-            return component;
+            return null;
         }
-        else
-        {
-            Debug.Log("Getting a null object from the pool! ");
-        }
-
-        return null;
     }
-    public static T SpawnObject<T>(T objectToSpawn, Vector3 spawnPos, Quaternion spawnRot, PoolType poolType = PoolType.GameObject,
+    public T SpawnObject<T>(T objectToSpawn, Vector3 spawnPos, Quaternion spawnRot, PoolType poolType = PoolType.GameObject,
         AudioClip generateClip = null,AudioClip deleteClip = null) where T : Component
     {
         return SpawnObject<T>(objectToSpawn.gameObject,  spawnPos,  spawnRot, poolType,generateClip,deleteClip);
     }
 
-    public static GameObject SpawnObject(GameObject objectToSpawn, Vector3 spawnPos, Quaternion spawnRot, PoolType poolType = PoolType.GameObject,
+    public GameObject SpawnObject(GameObject objectToSpawn, Vector3 spawnPos, Quaternion spawnRot, PoolType poolType = PoolType.GameObject,
         AudioClip generateClip = null,AudioClip deleteClip = null)
     {
         return SpawnObject<GameObject>(objectToSpawn.gameObject,  spawnPos,  spawnRot, poolType,generateClip,deleteClip);
     }
 
-    public static void ReturnObjectToPool(GameObject obj, PoolType poolType = PoolType.GameObject,bool useDeleteClip = false)
+    public void ReturnObjectToPool(GameObject obj, PoolType poolType = PoolType.GameObject,bool useDeleteClip = false)
     {
-        if (_cloneToPrefabMap.TryGetValue(obj, out GameObject prefab))
+        lock (_lock)
         {
-            GameObject parentObject = SetParentObject(poolType);
-            if (obj.transform.parent != parentObject.transform)
+            if (_cloneToPrefabMap.TryGetValue(obj, out GameObject prefab))
             {
-                obj.transform.SetParent(parentObject.transform);
-            }
+                GameObject parentObject = SetParentObject(poolType);
+                if (obj.transform.parent != parentObject.transform)
+                {
+                    obj.transform.SetParent(parentObject.transform);
+                }
 
-            if (_objectPools.TryGetValue(prefab, out ObjectPool<GameObject> pool))
+                if (_objectPools.TryGetValue(prefab, out ObjectPool<GameObject> pool))
+                {
+                    pool.Release(obj);
+                }
+            }
+            else
             {
-                pool.Release(obj);
+                Debug.LogWarning("Trying to return an object that is not pooled" + obj.name);
             }
         }
-        else
-        {
-            Debug.LogWarning("Trying to return an object that is not pooled" + obj.name);
-        }
+       
     }
 }
